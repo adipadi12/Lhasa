@@ -6,7 +6,7 @@ export type DishCategory = // think enum in C#
   | "Dessert"
   | "Drink";
 
-export interface Dish {
+export interface Dish { 
   id: string;
   name: string;
   description: string;
