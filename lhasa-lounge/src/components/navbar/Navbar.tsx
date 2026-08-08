@@ -1,6 +1,6 @@
-import Container from "../common/Container"
-import { navigation } from "../../data/navigation";
-import { restaurant } from "../../data/restaurant";
+import Container from "../common/Container";
+import Logo from "../common/Logo";
+import NavigationLinks from "./NavigationLinks";
 import Button from "../common/Button";
 /*
 Notice the braces.
@@ -33,19 +33,10 @@ const Navbar = () => { // fucntion that instead of returning a GameObject it ret
             <Container>
                 <div className="flex items-center justify-between py-6">
 
-                    <h1>{restaurant.name}</h1>
+                    <Logo/>
 
-                    <div className="flex gap-8">
-                        {navigation.map((item) => ( // works like foreach(var item in navigation)
-                            <a className="gap-8"
-                                key={item.href}
-                                href={item.href}
-                            >
-                                {item.label}
-                            </a>
-                        ))}
-
-                    </div>
+                    <NavigationLinks/>
+                    
                     <Button>
                         Reserve Table
                     </Button>

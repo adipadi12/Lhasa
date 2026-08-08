@@ -11,14 +11,18 @@ const Button = ({
     variant = "primary",
     onClick,
 }: ButtonProps) => {
-    const buttonStyles =
-        variant === "primary"
-            ? "bg-yellow-600 text-white"
-            : "bg-white text-black";
+
+    const baseStyles =
+        "px-6 py-3 rounded-full font-medium transition-colors duration-200";
+
+    const variantStyles = {
+        primary: "bg-yellow-600 text-white hover:bg-yellow-500",
+        secondary: "border border-white text-white hover:bg-white hover:text-black",
+    };
 
     return (
         <button
-            className={buttonStyles}
+            className={`${baseStyles} ${variantStyles[variant]}`}
             onClick={onClick}
         >
             {children}
