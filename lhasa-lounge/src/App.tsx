@@ -9,6 +9,10 @@ function App() {
                     path="/"
                     element={<Home />}
                 />
+                <Route
+                    path="*"
+                    element={<Home />}
+                />
             </Routes>
         </BrowserRouter>
     );

@@ -6,18 +6,18 @@ export interface NavItem {
 export const navigation: NavItem[] = [
     {
         label: "Home",
-        href: "/",
+        href: "#home",
     },
     {
         label: "Menu",
-        href: "/menu",
+        href: "#menu",
     },
     {
         label: "Gallery",
-        href: "/gallery",
+        href: "#gallery",
     },
     {
-        label: "Contact",
-        href: "/contact",
+        label: "Visit",
+        href: "#contact",
     },
 ];
