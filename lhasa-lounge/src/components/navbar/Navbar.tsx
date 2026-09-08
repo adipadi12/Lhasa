@@ -1,50 +1,46 @@
-import Container from "../common/Container";
-import Logo from "../common/Logo";
-import NavigationLinks from "./NavigationLinks";
-import Button from "../common/Button";
-/*
-Notice the braces.
+import { Link, useLocation } from "react-router-dom";
+import { restaurant } from "../../data/restaurant";
 
-Earlier we imported
+const navItems = [
+  { label: "Home", href: "/" },
+  { label: "Menu", href: "/menu" },
+  { label: "Gallery", href: "/gallery" },
+  { label: "Contact", href: "/contact" },
+];
 
-import Container from "../common/Container";
+const Navbar = () => {
+  const location = useLocation();
 
-without braces.
+  return (
+    <header className="site-header">
+      <nav className="container nav-shell" aria-label="Primary navigation">
+        <Link className="brand-mark" to="/" aria-label="Lhasa Lounge home">
+          <span>LL</span>
+          <strong>{restaurant.name}</strong>
+        </Link>
 
-Why?
+        <div className="nav-links">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              style={
+                location.pathname === item.href
+                  ? { color: "var(--ink)", background: "rgba(255, 247, 232, 0.1)" }
+                  : undefined
+              }
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
 
-Because
+        <Link className="nav-cta" to="/contact">
+          Reserve
+        </Link>
+      </nav>
+    </header>
+  );
+};
 
-export default
-
-is imported directly.
-
-Whereas
-
-export const navigation
-
-must be imported with braces.
-
-This is pure JavaScript, not React.
-*/
-const Navbar = () => { // fucntion that instead of returning a GameObject it returns JSX
-    return (
-        <nav>
-            <Container>
-                <div className="flex items-center justify-between py-6">
-
-                    <Logo/>
-
-                    <NavigationLinks/>
-                    
-                    <Button>
-                        Reserve Table
-                    </Button>
-
-                </div>
-            </Container>
-        </nav>
-    ); // container acts as a prefab that can be used anywhere
-}; // a works like an anchor for each href
-
-export default Navbar; // makes componenet available to other files
+export default Navbar;
