@@ -1,26 +1,43 @@
-import { navigation } from "../../data/navigation";
+import { Link, useLocation } from "react-router-dom";
 import { restaurant } from "../../data/restaurant";
 
+const navItems = [
+  { label: "Home", href: "/" },
+  { label: "Menu", href: "/menu" },
+  { label: "Gallery", href: "/gallery" },
+  { label: "Contact", href: "/contact" },
+];
+
 const Navbar = () => {
+  const location = useLocation();
+
   return (
     <header className="site-header">
       <nav className="container nav-shell" aria-label="Primary navigation">
-        <a className="brand-mark" href="#home" aria-label="Lhasa Lounge home">
+        <Link className="brand-mark" to="/" aria-label="Lhasa Lounge home">
           <span>LL</span>
           <strong>{restaurant.name}</strong>
-        </a>
+        </Link>
 
         <div className="nav-links">
-          {navigation.map((item) => (
-            <a key={item.href} href={item.href}>
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              style={
+                location.pathname === item.href
+                  ? { color: "var(--ink)", background: "rgba(255, 247, 232, 0.1)" }
+                  : undefined
+              }
+            >
               {item.label}
-            </a>
+            </Link>
           ))}
         </div>
 
-        <a className="nav-cta" href="#contact">
+        <Link className="nav-cta" to="/contact">
           Reserve
-        </a>
+        </Link>
       </nav>
     </header>
   );

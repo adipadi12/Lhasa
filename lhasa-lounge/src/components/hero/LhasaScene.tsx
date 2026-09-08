@@ -1,150 +1,148 @@
-import { ContactShadows, Environment, Float, OrbitControls, Sparkles } from "@react-three/drei";
+import { ContactShadows, Environment, Float, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useRef } from "react";
+import type { ThreeEvent } from "@react-three/fiber";
+import { Suspense, useMemo, useRef } from "react";
+import * as THREE from "three";
 import type { Group } from "three";
 
-type Vec3 = [number, number, number];
+useGLTF.preload("/ramen/scene.gltf");
 
-const flagColors = ["#d74432", "#f0b746", "#2d8d74", "#2f6fbd", "#f5eee0"];
-
-const pleatAngles = [-0.72, -0.5, -0.28, -0.07, 0.14, 0.35, 0.56, 0.77];
-
-const steamColumns = [
-  { x: -0.55, delay: 0 },
-  { x: 0.05, delay: 0.9 },
-  { x: 0.58, delay: 1.7 },
-];
-
-function Momo({
-  position,
-  rotation = [0, 0, 0],
-  scale = 1,
+/* ─── GLTF Ramen Model with High-Performance Zero-Stutter Interaction ─── */
+function RamenModel({
+  onPointerActive,
 }: {
-  position: Vec3;
-  rotation?: Vec3;
-  scale?: number;
+  onPointerActive: (active: boolean) => void;
 }) {
-  return (
-    <group position={position} rotation={rotation} scale={scale}>
-      <mesh castShadow receiveShadow scale={[1.05, 0.78, 0.86]}>
-        <sphereGeometry args={[0.62, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color="#f7dfbd" roughness={0.72} />
-      </mesh>
-      {pleatAngles.map((angle) => (
-        <mesh
-          castShadow
-          key={angle}
-          position={[Math.sin(angle) * 0.46, 0.22, Math.cos(angle) * 0.18 + 0.08]}
-          rotation={[0.08, angle, Math.sin(angle) * 0.45]}
-          scale={[0.035, 0.25, 0.035]}
-        >
-          <cylinderGeometry args={[1, 1, 1, 12]} />
-          <meshStandardMaterial color="#e8c99e" roughness={0.82} />
-        </mesh>
-      ))}
-      <mesh castShadow position={[0, 0.5, 0.06]} scale={[0.22, 0.13, 0.22]}>
-        <sphereGeometry args={[1, 24, 12]} />
-        <meshStandardMaterial color="#e7c293" roughness={0.78} />
-      </mesh>
-    </group>
-  );
-}
+  const { scene } = useGLTF("/ramen/scene.gltf");
+  const modelGroup = useRef<Group>(null);
+  const containerGroup = useRef<Group>(null);
 
-function SteamColumn({ x, delay }: { x: number; delay: number }) {
-  const group = useRef<Group>(null);
+  // Use refs for animation states to completely avoid React re-renders during mouse hover/movement
+  const isHovered = useRef(false);
+  const hoverFactor = useRef(0);
+  const bounceFactor = useRef(0);
+  const clickCount = useRef(0);
 
-  useFrame(({ clock }) => {
-    if (!group.current) {
-      return;
+  // Clone scene so it can be safely manipulated
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        // If material exists, refine tone & opacity
+        if (mesh.material) {
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          mat.depthWrite = true;
+          mat.transparent = mesh.name.toLowerCase().includes("smoke");
+          if (mat.transparent) {
+            mat.opacity = 0.85;
+          }
+        }
+      }
+    });
+    return clone;
+  }, [scene]);
+
+  // Click / Tap elastic bounce handler
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    bounceFactor.current = 1.0;
+    clickCount.current += 1;
+  };
+
+  const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    isHovered.current = true;
+    onPointerActive(true);
+  };
+
+  const handlePointerOut = () => {
+    isHovered.current = false;
+    onPointerActive(false);
+  };
+
+  useFrame((state, delta) => {
+    if (!modelGroup.current || !containerGroup.current) return;
+
+    // 1. Smoothly interpolate hover state with exponential damping (zero stutter)
+    const targetHover = isHovered.current ? 1 : 0;
+    hoverFactor.current = THREE.MathUtils.damp(hoverFactor.current, targetHover, 8, delta);
+
+    // 2. Smoothly decay bounce factor
+    if (bounceFactor.current > 0.001) {
+      bounceFactor.current = THREE.MathUtils.damp(bounceFactor.current, 0, 4.5, delta);
     }
 
-    const t = clock.elapsedTime + delay;
-    group.current.position.y = 0.75 + Math.sin(t * 1.2) * 0.1;
-    group.current.rotation.z = Math.sin(t * 0.8) * 0.12;
-    group.current.scale.setScalar(0.9 + Math.sin(t) * 0.06);
+    // 3. Squash and stretch bounce calculation
+    const bounceSin = Math.sin(bounceFactor.current * Math.PI * 3.5) * bounceFactor.current;
+    const baseScale = 9.5;
+    const hoverScale = 1 + hoverFactor.current * 0.05;
+    const currentScaleY = baseScale * hoverScale * (1 - bounceSin * 0.08);
+    const currentScaleXZ = baseScale * hoverScale * (1 + bounceSin * 0.05);
+
+    modelGroup.current.scale.set(currentScaleXZ, currentScaleY, currentScaleXZ);
+
+    // 4. Parallax tilt towards cursor (smoothed to eliminate jitter)
+    const targetTiltX = 0.28 - state.pointer.y * 0.16;
+    const targetTiltZ = -state.pointer.x * 0.14;
+
+    modelGroup.current.rotation.x = THREE.MathUtils.damp(
+      modelGroup.current.rotation.x,
+      targetTiltX,
+      6,
+      delta
+    );
+    modelGroup.current.rotation.z = THREE.MathUtils.damp(
+      modelGroup.current.rotation.z,
+      targetTiltZ,
+      6,
+      delta
+    );
+
+    // 5. Subtle ambient floating rotation
+    const ambientFloat = Math.sin(state.clock.elapsedTime * 0.4) * 0.18;
+    containerGroup.current.rotation.y = ambientFloat;
   });
 
   return (
-    <group ref={group} position={[x, 0.7, 0.1]}>
-      {[0, 1, 2].map((segment) => (
+    <Float floatIntensity={0.2} rotationIntensity={0.08} speed={1.3}>
+      <group ref={containerGroup} position={[1.35, -0.3, 0]}>
+        {/* Invisible hit proxy sphere: Prevents rapid re-triggering across sub-mesh boundaries */}
         <mesh
-          key={segment}
-          position={[Math.sin(segment) * 0.12, segment * 0.42, 0]}
-          rotation={[Math.PI / 2.25, 0, Math.sin(segment + delay) * 0.7]}
-          scale={[0.14 + segment * 0.035, 0.018, 0.14 + segment * 0.035]}
+          position={[0, 0, 0]}
+          onPointerDown={handlePointerDown}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+          visible={false}
         >
-          <torusGeometry args={[1, 0.18, 12, 36]} />
-          <meshStandardMaterial color="#fff5de" opacity={0.23 - segment * 0.04} transparent />
+          <sphereGeometry args={[2.5, 16, 16]} />
+          <meshBasicMaterial transparent opacity={0} />
         </mesh>
-      ))}
-    </group>
-  );
-}
 
-function BambooSteamer() {
-  return (
-    <group position={[0.15, -0.74, 0]}>
-      <mesh castShadow receiveShadow position={[0, 0.22, 0]}>
-        <cylinderGeometry args={[1.72, 1.56, 0.42, 96]} />
-        <meshStandardMaterial color="#c58a46" roughness={0.58} metalness={0.04} />
-      </mesh>
-      <mesh castShadow position={[0, 0.47, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.72, 0.08, 24, 96]} />
-        <meshStandardMaterial color="#f0bc72" roughness={0.42} />
-      </mesh>
-      <mesh receiveShadow position={[0, 0.49, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[1.58, 1.58, 0.04, 96]} />
-        <meshStandardMaterial color="#d8a65b" roughness={0.7} />
-      </mesh>
-      <mesh castShadow receiveShadow position={[0, -0.08, 0]}>
-        <cylinderGeometry args={[1.56, 1.84, 0.54, 96]} />
-        <meshStandardMaterial color="#a86237" roughness={0.62} metalness={0.03} />
-      </mesh>
-      <mesh castShadow position={[0, -0.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.54, 0.06, 24, 96]} />
-        <meshStandardMaterial color="#7d3a28" roughness={0.5} />
-      </mesh>
-    </group>
-  );
-}
-
-function HeroFood() {
-  const group = useRef<Group>(null);
-
-  useFrame(({ clock }) => {
-    if (!group.current) {
-      return;
-    }
-
-    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.32) * 0.18;
-  });
-
-  return (
-    <Float floatIntensity={0.24} rotationIntensity={0.1} speed={1.35}>
-      <group ref={group} position={[1.55, -0.18, 0]} rotation={[0.04, -0.42, 0]}>
-        <BambooSteamer />
-        <Momo position={[-0.72, 0.02, 0.28]} rotation={[0, -0.46, 0.04]} scale={1.15} />
-        <Momo position={[0.08, 0.09, 0.48]} rotation={[0.02, 0.08, -0.04]} scale={1.22} />
-        <Momo position={[0.77, 0.03, 0.2]} rotation={[0, 0.42, -0.02]} scale={1.1} />
-        <Momo position={[-0.16, 0.15, -0.32]} rotation={[0.02, -0.1, 0.05]} scale={1.04} />
-        {steamColumns.map((column) => (
-          <SteamColumn key={column.x} x={column.x} delay={column.delay} />
-        ))}
+        <group ref={modelGroup} position={[0, 0, 0]}>
+          {/* Center model vertically around pivot */}
+          <primitive object={clonedScene} position={[0, -0.18, 0]} />
+        </group>
       </group>
     </Float>
   );
 }
 
+/* ─── Ambient Backdrop Elements ─── */
+const flagColors = ["#2f6fbd", "#f5eee0", "#d74432", "#2d8d74", "#f0b746"];
+
 function PrayerFlags() {
   return (
-    <group position={[-1.25, 1.72, -0.9]} rotation={[0.08, 0.14, -0.06]}>
+    <group position={[-1.35, 1.78, -1]} rotation={[0.08, 0.16, -0.06]}>
       {flagColors.map((color, index) => (
-        <mesh key={color} position={[index * 0.52, Math.sin(index * 0.7) * 0.08, 0]}>
-          <planeGeometry args={[0.34, 0.42]} />
-          <meshStandardMaterial color={color} roughness={0.75} side={2} />
+        <mesh key={color} position={[index * 0.55, Math.sin(index * 0.7) * 0.08, 0]}>
+          <planeGeometry args={[0.36, 0.44]} />
+          <meshStandardMaterial color={color} roughness={0.75} side={THREE.DoubleSide} />
         </mesh>
       ))}
-      <mesh position={[1.03, 0.21, -0.01]} rotation={[0, 0, Math.PI / 2]} scale={[0.01, 1.22, 0.01]}>
+      <mesh position={[1.1, 0.22, -0.01]} rotation={[0, 0, Math.PI / 2]} scale={[0.01, 1.35, 0.01]}>
         <cylinderGeometry args={[1, 1, 1, 8]} />
         <meshStandardMaterial color="#ead6aa" roughness={0.9} />
       </mesh>
@@ -155,18 +153,23 @@ function PrayerFlags() {
 function Lantern() {
   return (
     <Float floatIntensity={0.36} rotationIntensity={0.2} speed={1.6}>
-      <group position={[-1.9, -0.3, 0.35]} rotation={[0.04, 0.36, -0.08]}>
-        <mesh castShadow scale={[0.43, 0.58, 0.43]}>
+      <group position={[-2.1, -0.2, 0.4]} rotation={[0.04, 0.36, -0.08]}>
+        <mesh castShadow scale={[0.45, 0.62, 0.45]}>
           <sphereGeometry args={[1, 36, 24]} />
-          <meshStandardMaterial color="#d74836" roughness={0.48} emissive="#5f100d" emissiveIntensity={0.45} />
+          <meshStandardMaterial
+            color="#d74836"
+            roughness={0.45}
+            emissive="#721410"
+            emissiveIntensity={0.55}
+          />
         </mesh>
-        <mesh position={[0, 0.62, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.32, 0.025, 12, 42]} />
-          <meshStandardMaterial color="#f2bd54" roughness={0.32} metalness={0.25} />
+        <mesh position={[0, 0.66, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.34, 0.028, 12, 42]} />
+          <meshStandardMaterial color="#f2bd54" roughness={0.3} metalness={0.35} />
         </mesh>
-        <mesh position={[0, -0.62, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.32, 0.025, 12, 42]} />
-          <meshStandardMaterial color="#f2bd54" roughness={0.32} metalness={0.25} />
+        <mesh position={[0, -0.66, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.34, 0.028, 12, 42]} />
+          <meshStandardMaterial color="#f2bd54" roughness={0.3} metalness={0.35} />
         </mesh>
       </group>
     </Float>
@@ -175,50 +178,122 @@ function Lantern() {
 
 function MountainSilhouette() {
   return (
-    <group position={[0.75, -1.25, -2.65]} rotation={[0, -0.08, 0]}>
-      <mesh position={[-1.3, 0.65, 0]} rotation={[0, 0, 0.08]} scale={[1.9, 1.45, 0.2]}>
+    <group position={[0.75, -1.35, -2.8]} rotation={[0, -0.08, 0]}>
+      <mesh position={[-1.4, 0.65, 0]} rotation={[0, 0, 0.08]} scale={[2, 1.5, 0.2]}>
         <coneGeometry args={[1, 1.7, 4]} />
-        <meshStandardMaterial color="#6b3141" roughness={0.9} />
+        <meshStandardMaterial color="#4a1f2c" roughness={0.95} />
       </mesh>
-      <mesh position={[0.1, 0.78, -0.15]} rotation={[0, 0, -0.06]} scale={[2.2, 1.65, 0.2]}>
+      <mesh position={[0.15, 0.8, -0.15]} rotation={[0, 0, -0.06]} scale={[2.3, 1.7, 0.2]}>
         <coneGeometry args={[1, 1.9, 4]} />
-        <meshStandardMaterial color="#244d4a" roughness={0.92} />
+        <meshStandardMaterial color="#1a3835" roughness={0.95} />
       </mesh>
-      <mesh position={[1.55, 0.58, -0.22]} rotation={[0, 0, -0.1]} scale={[1.7, 1.28, 0.2]}>
+      <mesh position={[1.65, 0.58, -0.22]} rotation={[0, 0, -0.1]} scale={[1.8, 1.35, 0.2]}>
         <coneGeometry args={[1, 1.55, 4]} />
-        <meshStandardMaterial color="#7a5229" roughness={0.9} />
+        <meshStandardMaterial color="#54361c" roughness={0.95} />
       </mesh>
     </group>
   );
 }
 
+/* ─── Main LhasaScene Canvas Component ─── */
 export default function LhasaScene() {
+  const isInteracting = useRef(false);
+  const timeoutRef = useRef<number | null>(null);
+
+  const handleInteractionStart = () => {
+    isInteracting.current = true;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
+
+  const handleInteractionEnd = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = window.setTimeout(() => {
+      isInteracting.current = false;
+    }, 2200);
+  };
+
   return (
-    <Canvas
-      camera={{ position: [0, 1.05, 6.3], fov: 42 }}
-      dpr={[1, 1.8]}
-      gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
-      shadows
-    >
-      <ambientLight intensity={1.2} />
-      <directionalLight color="#fff0c2" intensity={2.2} position={[2.4, 4, 3]} castShadow />
-      <pointLight color="#d84a35" intensity={18} position={[-2.25, 0.25, 1.2]} distance={4.8} />
-      <spotLight
-        angle={0.45}
-        color="#f5c874"
-        intensity={32}
-        penumbra={0.7}
-        position={[0, 4.2, 3.2]}
-        castShadow
-      />
-      <MountainSilhouette />
-      <PrayerFlags />
-      <Lantern />
-      <HeroFood />
-      <Sparkles color="#f7d27d" count={34} opacity={0.35} scale={[5, 2.4, 2]} size={1.6} speed={0.25} />
-      <ContactShadows blur={2.8} far={3.6} opacity={0.4} position={[1.65, -1.35, 0]} scale={5.4} />
-      <Environment preset="city" />
-      <OrbitControls autoRotate autoRotateSpeed={0.45} enablePan={false} enableZoom={false} maxPolarAngle={Math.PI / 2.05} />
-    </Canvas>
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      <Canvas
+        camera={{ position: [0, 1.1, 5.8], fov: 40 }}
+        dpr={[1, 2]}
+        gl={{
+          antialias: true,
+          alpha: true,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+        }}
+        shadows
+        onPointerDown={handleInteractionStart}
+        onPointerUp={handleInteractionEnd}
+        onTouchStart={handleInteractionStart}
+        onTouchEnd={handleInteractionEnd}
+      >
+        {/* Lights */}
+        <ambientLight intensity={1.4} />
+        <directionalLight color="#fff5db" intensity={2.8} position={[2.8, 4.8, 3.4]} castShadow />
+        <pointLight color="#e04e38" intensity={24} position={[-2.4, 0.4, 1.5]} distance={5.4} />
+        <spotLight
+          angle={0.55}
+          color="#ffd68a"
+          intensity={38}
+          penumbra={0.75}
+          position={[1.3, 4.6, 3.5]}
+          castShadow
+        />
+
+        {/* Backdrop */}
+        <MountainSilhouette />
+        <PrayerFlags />
+        <Lantern />
+
+        {/* 3D GLTF Ramen Bowl with Suspense Fallback */}
+        <Suspense fallback={null}>
+          <RamenModel onPointerActive={(active) => { isInteracting.current = active; }} />
+        </Suspense>
+
+        {/* Floating golden culinary embers */}
+        <Sparkles
+          color="#f7d27d"
+          count={38}
+          opacity={0.35}
+          scale={[5.4, 2.8, 2.2]}
+          size={1.8}
+          speed={0.3}
+        />
+
+        {/* Realistic contact shadow beneath bowl */}
+        <ContactShadows
+          blur={2.8}
+          far={4.2}
+          opacity={0.5}
+          position={[1.35, -1.55, 0]}
+          scale={7.5}
+        />
+
+        <Environment preset="city" />
+
+        {/* OrbitControls for smooth drag & touch rotation */}
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.06}
+          rotateSpeed={0.85}
+          autoRotate
+          autoRotateSpeed={0.45}
+          enablePan={false}
+          enableZoom={false}
+          maxPolarAngle={Math.PI / 1.95}
+          minPolarAngle={Math.PI / 4.2}
+          onStart={handleInteractionStart}
+          onEnd={handleInteractionEnd}
+        />
+      </Canvas>
+
+      {/* Interactive prompt badge */}
+      <div className="hero-interactive-cue" aria-hidden="true">
+        <span>✦ Drag or tap bowl to interact ✦</span>
+      </div>
+    </div>
   );
 }
